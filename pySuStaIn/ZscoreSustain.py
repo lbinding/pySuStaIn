@@ -602,24 +602,30 @@ class ZscoreSustain(AbstractSustain):
                 # Use 1s to start with all white
                 confus_matrix_c = np.ones((N_bio, N, 3))
 
-                # Loop over each z-score event
-                for j, z in enumerate(zvalues):
-                    # Determine which colours to alter
-                    # I.e. red (1,0,0) means removing green & blue channels
-                    # according to the certainty of red (representing z-score 1)
-                    alter_level = colour_mat[j] == 0
-                    # Extract the uncertainties for this z-score
-                    confus_matrix_zscore = confus_matrix[(stage_zscore==z)[0]]
-                    # Subtract the certainty for this colour
-                    confus_matrix_c[
-                        np.ix_(
-                            stage_biomarker_index[(stage_zscore==z)[0]], range(N),
-                            alter_level
+                #LB 10/04/24; Loop over abnormality levels and assign colours 
+                #   Instead of assigning abnormality its own unique colour
+                #   I.e., abnormality event 1 will be red, 2 will be purple, etc... 
+                for abn_n in range(np.shape(Z_vals)[1]):
+                    zvalues_abn_n = Z_vals[:,abn_n]
+                    zvalues = np.unique(zvalues_abn_n)
+                    # Loop over each z-score event
+                    for j, z in enumerate(zvalues):
+                        # Determine which colours to alter
+                        # I.e. red (1,0,0) means removing green & blue channels
+                        # according to the certainty of red (representing z-score 1)
+                        alter_level = colour_mat[j] == 0
+                        # Extract the uncertainties for this z-score
+                        confus_matrix_zscore = confus_matrix[(stage_zscore==z)[0]]
+                        # Subtract the certainty for this colour
+                        confus_matrix_c[
+                            np.ix_(
+                                stage_biomarker_index[(stage_zscore==z)[0]], range(N),
+                                alter_level
+                            )
+                        ] -= np.tile(
+                            confus_matrix_zscore.reshape((stage_zscore==z).sum(), N, 1),
+                            (1, 1, alter_level.sum())
                         )
-                    ] -= np.tile(
-                        confus_matrix_zscore.reshape((stage_zscore==z).sum(), N, 1),
-                        (1, 1, alter_level.sum())
-                    )
                 if subtype_titles is not None:
                     title_i = subtype_titles[i]
                 else:
