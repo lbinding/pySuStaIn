@@ -147,7 +147,7 @@ class ZscoreSustain():
 
 #%% zSuStaIn functions 
 
-def _initialise_sequence(SuStaIn_inputs_dict, sustainData, rng):
+def _initialise_sequence(input_dict, rng):
     # Randomly initialises a linear z-score model ensuring that the biomarkers
     # are monotonically increasing
     #
@@ -156,25 +156,25 @@ def _initialise_sequence(SuStaIn_inputs_dict, sustainData, rng):
     # S - a random linear z-score model under the condition that each biomarker
     # is monotonically increasing
 
-    N                                   = np.array(SuStaIn_inputs_dict['stage_zscore']).shape[1]
+    N                                   = np.array(input_dict['stage_zscore']).shape[1]
     S                                   = np.zeros(N)
     for i in range(N):
 
         IS_min_stage_zscore             = np.array([False] * N)
-        possible_biomarkers             = np.unique(SuStaIn_inputs_dict['stage_biomarker_index'])
+        possible_biomarkers             = np.unique(input_dict['stage_biomarker_index'])
         for j in range(len(possible_biomarkers)):
             IS_unselected               = [False] * N
             for k in set(range(N)) - set(S[:i]):
                 IS_unselected[k]        = True
 
-            this_biomarkers             = np.array([(np.array(SuStaIn_inputs_dict['stage_biomarker_index'])[0] == possible_biomarkers[j]).astype(int) +
+            this_biomarkers             = np.array([(np.array(input_dict['stage_biomarker_index'])[0] == possible_biomarkers[j]).astype(int) +
                                                     (np.array(IS_unselected) == 1).astype(int)]) == 2
             if not np.any(this_biomarkers):
                 this_min_stage_zscore   = 0
             else:
-                this_min_stage_zscore   = min(SuStaIn_inputs_dict['stage_zscore'][this_biomarkers])
+                this_min_stage_zscore   = min(input_dict['stage_zscore'][this_biomarkers])
             if (this_min_stage_zscore):
-                temp                    = ((this_biomarkers.astype(int) + (SuStaIn_inputs_dict['stage_zscore'] == this_min_stage_zscore).astype(int)) == 2).T
+                temp                    = ((this_biomarkers.astype(int) + (input_dict['stage_zscore'] == this_min_stage_zscore).astype(int)) == 2).T
                 temp                    = temp.reshape(len(temp), )
                 IS_min_stage_zscore[temp] = True
 
@@ -191,7 +191,7 @@ def linspace_local2(a, b, N, arange_N):
     return a + (b - a) / (N - 1.) * arange_N
 
 
-def _calculate_likelihood_stage(SuStaIn_inputs_dict, sustainData, S):
+def _calculate_likelihood_stage(input_dict,  S):
     '''
      Computes the likelihood of a single linear z-score model using an
      approximation method (faster)
@@ -201,10 +201,10 @@ def _calculate_likelihood_stage(SuStaIn_inputs_dict, sustainData, S):
      in the SuStaIn model
     '''
 
-    N                                   = SuStaIn_inputs_dict['stage_biomarker_index'].shape[1]
+    N                                   = input_dict['stage_biomarker_index'].shape[1]
     S_inv                               = np.array([0] * N)
     S_inv[S.astype(int)]                = np.arange(N)
-    possible_biomarkers                 = np.unique(SuStaIn_inputs_dict['stage_biomarker_index'])
+    possible_biomarkers                 = np.unique(input_dict['stage_biomarker_index'])
     B                                   = len(possible_biomarkers)
     point_value                         = np.zeros((B, N + 2))
 
@@ -213,8 +213,8 @@ def _calculate_likelihood_stage(SuStaIn_inputs_dict, sustainData, S):
 
     for i in range(B):
         b                               = possible_biomarkers[i]
-        event_location                  = np.concatenate([[0], S_inv[(SuStaIn_inputs_dict['stage_biomarker_index'] == b)[0]], [N]])
-        event_value                     = np.concatenate([[SuStaIn_inputs_dict['min_biomarker_zscore'][i]], SuStaIn_inputs_dict['stage_zscore'][SuStaIn_inputs_dict['stage_biomarker_index'] == b], [SuStaIn_inputs_dict['max_biomarker_zscore'][i]]])
+        event_location                  = np.concatenate([[0], S_inv[(input_dict['stage_biomarker_index'] == b)[0]], [N]])
+        event_value                     = np.concatenate([[input_dict['min_biomarker_zscore'][i]], input_dict['stage_zscore'][input_dict['stage_biomarker_index'] == b], [input_dict['max_biomarker_zscore'][i]]])
         for j in range(len(event_location) - 1):
 
             if j == 0:  # FIXME: nasty hack to get Matlab indexing to match up - necessary here because indices are used for linspace limits
@@ -240,11 +240,11 @@ def _calculate_likelihood_stage(SuStaIn_inputs_dict, sustainData, S):
 
     stage_value                         = 0.5 * point_value[:, :point_value.shape[1] - 1] + 0.5 * point_value[:, 1:]
 
-    M                                   = sustainData.getNumSamples()   #data_local.shape[0]
+    M                                   = input_dict['sustainData'].getNumSamples()   #data_local.shape[0]
     p_perm_k                            = np.zeros((M, N + 1))
 
     # optimised likelihood calc - take log and only call np.exp once after loop
-    sigmat = np.array(SuStaIn_inputs_dict['std_biomarker_zscore'])
+    sigmat = np.array(input_dict['std_biomarker_zscore'])
 
     factor                              = np.log(1. / np.sqrt(np.pi * 2.0) * sigmat)
     coeff                               = np.log(1. / float(N + 1))
@@ -260,24 +260,24 @@ def _calculate_likelihood_stage(SuStaIn_inputs_dict, sustainData, S):
     # N_biomarkers                        = stage_value.shape[0]
     # for j in range(N + 1):
     #     stage_value_tiled_j             = stage_value_tiled[:, j].reshape(M, N_biomarkers)
-    #     x                               = (sustainData.Tau_data - stage_value_tiled_j) / sigmat  #(data_local - stage_value_tiled_j) / sigmat
+    #     x                               = (input_dict['sustainData'].Tau_data - stage_value_tiled_j) / sigmat  #(data_local - stage_value_tiled_j) / sigmat
     #     p_perm_k[:, j]                  = coeff + np.sum(factor - .5 * np.square(x), 1)
     # p_perm_k                            = np.exp(p_perm_k)
 
     # even faster - do in one go
-    x = (sustainData.Tau_data[:, :, None] - stage_value) / sigmat[None, :, None]
+    x = (input_dict['sustainData'].data[:, :, None] - stage_value) / sigmat[None, :, None]
     p_perm_k = coeff + np.sum(factor[None, :, None] - 0.5 * np.square(x), 1)
     p_perm_k = np.exp(p_perm_k)
 
     return p_perm_k
 
 
-def _optimise_parameters(SuStaIn_inputs_dict, sustainData, S_init, f_init, rng):
+def _optimise_parameters(input_dict,  S_init, f_init, rng):
     # Optimise the parameters of the SuStaIn model
 
-    M                                   = sustainData.getNumSamples()   #data_local.shape[0]
+    M                                   = input_dict['sustainData'].getNumSamples()   #data_local.shape[0]
     N_S                                 = S_init.shape[0]
-    N                                   = SuStaIn_inputs_dict['stage_zscore'].shape[1]
+    N                                   = input_dict['stage_zscore'].shape[1]
 
     S_opt                               = S_init.copy()  # have to copy or changes will be passed to S_init
     f_opt                               = np.array(f_init).reshape(N_S, 1, 1)
@@ -286,7 +286,7 @@ def _optimise_parameters(SuStaIn_inputs_dict, sustainData, S_init, f_init, rng):
     p_perm_k                            = np.zeros((M, N + 1, N_S))
 
     for s in range(N_S):
-        p_perm_k[:, :, s]               = _calculate_likelihood_stage(SuStaIn_inputs_dict,sustainData, S_opt[s])
+        p_perm_k[:, :, s]               = _calculate_likelihood_stage(input_dict, S_opt[s])
 
     p_perm_k_weighted                   = p_perm_k * f_val_mat
     p_perm_k_norm                       = p_perm_k_weighted / np.sum(p_perm_k_weighted + 1e-250, axis=(1, 2), keepdims=True)
@@ -306,9 +306,9 @@ def _optimise_parameters(SuStaIn_inputs_dict, sustainData, S_init, f_init, rng):
 
             move_event_from             = current_location[selected_event]
 
-            this_stage_zscore           = SuStaIn_inputs_dict['stage_zscore'][0, selected_event]
-            selected_biomarker          = SuStaIn_inputs_dict['stage_biomarker_index'][0, selected_event]
-            possible_zscores_biomarker  = SuStaIn_inputs_dict['stage_zscore'][SuStaIn_inputs_dict['stage_biomarker_index'] == selected_biomarker]
+            this_stage_zscore           = input_dict['stage_zscore'][0, selected_event]
+            selected_biomarker          = input_dict['stage_biomarker_index'][0, selected_event]
+            possible_zscores_biomarker  = input_dict['stage_zscore'][input_dict['stage_biomarker_index'] == selected_biomarker]
 
             # slightly different conditional check to matlab version to protect python from calling min,max on an empty array
             min_filter                  = possible_zscores_biomarker < this_stage_zscore
@@ -316,13 +316,13 @@ def _optimise_parameters(SuStaIn_inputs_dict, sustainData, S_init, f_init, rng):
             events                      = np.array(range(N))
             if np.any(min_filter):
                 min_zscore_bound        = max(possible_zscores_biomarker[min_filter])
-                min_zscore_bound_event  = events[((SuStaIn_inputs_dict['stage_zscore'][0] == min_zscore_bound).astype(int) + (SuStaIn_inputs_dict['stage_biomarker_index'][0] == selected_biomarker).astype(int)) == 2]
+                min_zscore_bound_event  = events[((input_dict['stage_zscore'][0] == min_zscore_bound).astype(int) + (input_dict['stage_biomarker_index'][0] == selected_biomarker).astype(int)) == 2]
                 move_event_to_lower_bound = current_location[min_zscore_bound_event] + 1
             else:
                 move_event_to_lower_bound = 0
             if np.any(max_filter):
                 max_zscore_bound        = min(possible_zscores_biomarker[max_filter])
-                max_zscore_bound_event  = events[((SuStaIn_inputs_dict['stage_zscore'][0] == max_zscore_bound).astype(int) + (SuStaIn_inputs_dict['stage_biomarker_index'][0] == selected_biomarker).astype(int)) == 2]
+                max_zscore_bound_event  = events[((input_dict['stage_zscore'][0] == max_zscore_bound).astype(int) + (input_dict['stage_biomarker_index'][0] == selected_biomarker).astype(int)) == 2]
                 move_event_to_upper_bound = current_location[max_zscore_bound_event]
             else:
                 move_event_to_upper_bound = N
@@ -345,7 +345,7 @@ def _optimise_parameters(SuStaIn_inputs_dict, sustainData, S_init, f_init, rng):
                 new_sequence            = np.concatenate([current_sequence[np.arange(move_event_to)], [selected_event], current_sequence[np.arange(move_event_to, N - 1)]])
                 possible_sequences[index, :] = new_sequence
 
-                possible_p_perm_k[:, :, index] = _calculate_likelihood_stage(SuStaIn_inputs_dict,sustainData, new_sequence)
+                possible_p_perm_k[:, :, index] = _calculate_likelihood_stage(input_dict, new_sequence)
 
                 p_perm_k[:, :, s]       = possible_p_perm_k[:, :, index]
                 total_prob_stage        = np.sum(p_perm_k * f_val_mat, 2)
@@ -386,7 +386,7 @@ def calc_exp(x, mu, sig):
     x = (x - mu) / sig
     return np.exp(-.5 * x * x)
 
-def _calculate_likelihood(SuStaIn_inputs_dict, sustainData, S, f):
+def _calculate_likelihood(input_dict,  S, f):
     # Computes the likelihood of a mixture of models
     #
     #
@@ -397,9 +397,9 @@ def _calculate_likelihood(SuStaIn_inputs_dict, sustainData, S, f):
     # total_prob_cluster    - the total probability of each subtype in the current SuStaIn model
     # p_perm_k              - the probability of each subjects data at each stage of each subtype in the current SuStaIn model
 
-    M                                   = sustainData.getNumSamples()  #data_local.shape[0]
+    M                                   = input_dict['sustainData'].getNumSamples()  #data_local.shape[0]
     N_S                                 = S.shape[0]
-    N                                   = sustainData.getNumStages()    #self.stage_zscore.shape[1]
+    N                                   = input_dict['sustainData'].getNumStages()    #self.stage_zscore.shape[1]
 
     f                                   = np.array(f).reshape(N_S, 1, 1)
     f_val_mat                           = np.tile(f, (1, N + 1, M))
@@ -408,7 +408,7 @@ def _calculate_likelihood(SuStaIn_inputs_dict, sustainData, S, f):
     p_perm_k                            = np.zeros((M, N + 1, N_S))
 
     for s in range(N_S):
-        p_perm_k[:, :, s]               = _calculate_likelihood_stage(SuStaIn_inputs_dict,sustainData, S[s])  #self.__calculate_likelihood_stage_linearzscoremodel_approx(data_local, S[s])
+        p_perm_k[:, :, s]               = _calculate_likelihood_stage(input_dict, S[s])  #self.__calculate_likelihood_stage_linearzscoremodel_approx(data_local, S[s])
 
 
     total_prob_cluster                  = np.squeeze(np.sum(p_perm_k * f_val_mat, 1))
@@ -419,10 +419,10 @@ def _calculate_likelihood(SuStaIn_inputs_dict, sustainData, S, f):
 
     return loglike, total_prob_subj, total_prob_stage, total_prob_cluster, p_perm_k
 
-def _perform_mcmc(SuStaIn_inputs_dict, sustainData, seq_init, f_init, n_iterations, seq_sigma, f_sigma):
+def _perform_mcmc(input_dict,  seq_init, f_init, n_iterations, seq_sigma, f_sigma):
     # Take MCMC samples of the uncertainty in the SuStaIn model parameters
 
-    N                                   = SuStaIn_inputs_dict['stage_zscore'].shape[1]
+    N                                   = input_dict['stage_zscore'].shape[1]
     N_S                                 = seq_init.shape[0]
 
     if isinstance(f_sigma, float):  # FIXME: hack to enable multiplication
@@ -439,18 +439,18 @@ def _perform_mcmc(SuStaIn_inputs_dict, sustainData, seq_init, f_init, n_iteratio
 
     for i in tqdm(range(n_iterations), "MCMC Iteration", n_iterations, miniters=tqdm_update_iters):
         if i > 0:
-            seq_order                   = SuStaIn_inputs_dict['global_rng'].permutation(N_S)  # this function returns different random numbers to Matlab
+            seq_order                   = input_dict['global_rng'].permutation(N_S)  # this function returns different random numbers to Matlab
             for s in seq_order:
-                move_event_from         = int(np.ceil(N * SuStaIn_inputs_dict['global_rng'].random())) - 1
+                move_event_from         = int(np.ceil(N * input_dict['global_rng'].random())) - 1
                 current_sequence        = samples_sequence[s, :, i - 1]
 
                 current_location        = np.array([0] * N)
                 current_location[current_sequence.astype(int)] = np.arange(N)
 
                 selected_event          = int(current_sequence[move_event_from])
-                this_stage_zscore       = SuStaIn_inputs_dict['stage_zscore'][0, selected_event]
-                selected_biomarker      = SuStaIn_inputs_dict['stage_biomarker_index'][0, selected_event]
-                possible_zscores_biomarker = SuStaIn_inputs_dict['stage_zscore'][SuStaIn_inputs_dict['stage_biomarker_index'] == selected_biomarker]
+                this_stage_zscore       = input_dict['stage_zscore'][0, selected_event]
+                selected_biomarker      = input_dict['stage_biomarker_index'][0, selected_event]
+                possible_zscores_biomarker = input_dict['stage_zscore'][input_dict['stage_biomarker_index'] == selected_biomarker]
 
                 # slightly different conditional check to matlab version to protect python from calling min,max on an empty array
                 min_filter              = possible_zscores_biomarker < this_stage_zscore
@@ -458,14 +458,14 @@ def _perform_mcmc(SuStaIn_inputs_dict, sustainData, seq_init, f_init, n_iteratio
                 events                  = np.array(range(N))
                 if np.any(min_filter):
                     min_zscore_bound            = max(possible_zscores_biomarker[min_filter])
-                    min_zscore_bound_event      = events[((SuStaIn_inputs_dict['stage_zscore'][0] == min_zscore_bound).astype(int) + (SuStaIn_inputs_dict['stage_biomarker_index'][0] == selected_biomarker).astype(int)) == 2]
+                    min_zscore_bound_event      = events[((input_dict['stage_zscore'][0] == min_zscore_bound).astype(int) + (input_dict['stage_biomarker_index'][0] == selected_biomarker).astype(int)) == 2]
                     move_event_to_lower_bound   = current_location[min_zscore_bound_event] + 1
                 else:
                     move_event_to_lower_bound   = 0
 
                 if np.any(max_filter):
                     max_zscore_bound            = min(possible_zscores_biomarker[max_filter])
-                    max_zscore_bound_event      = events[((SuStaIn_inputs_dict['stage_zscore'][0] == max_zscore_bound).astype(int) + (SuStaIn_inputs_dict['stage_biomarker_index'][0] == selected_biomarker).astype(int)) == 2]
+                    max_zscore_bound_event      = events[((input_dict['stage_zscore'][0] == max_zscore_bound).astype(int) + (input_dict['stage_biomarker_index'][0] == selected_biomarker).astype(int)) == 2]
                     move_event_to_upper_bound   = current_location[max_zscore_bound_event]
                 else:
                     move_event_to_upper_bound   = N
@@ -486,7 +486,7 @@ def _perform_mcmc(SuStaIn_inputs_dict, sustainData, seq_init, f_init, n_iteratio
                 # use own normal PDF because stats.norm is slow
                 weight                  = calc_coeff(this_seq_sigma) * calc_exp(distance, 0., this_seq_sigma)
                 weight                  /= np.sum(weight)
-                index                   = SuStaIn_inputs_dict['global_rng'].choice(range(len(possible_positions)), 1, replace=True, p=weight)  # FIXME: difficult to check this because random.choice is different to Matlab randsample
+                index                   = input_dict['global_rng'].choice(range(len(possible_positions)), 1, replace=True, p=weight)  # FIXME: difficult to check this because random.choice is different to Matlab randsample
 
                 move_event_to           = possible_positions[index]
 
@@ -494,18 +494,18 @@ def _perform_mcmc(SuStaIn_inputs_dict, sustainData, seq_init, f_init, n_iteratio
                 new_sequence            = np.concatenate([current_sequence[np.arange(move_event_to)], [selected_event], current_sequence[np.arange(move_event_to, N - 1)]])
                 samples_sequence[s, :, i] = new_sequence
 
-            new_f                       = samples_f[:, i - 1] + f_sigma * SuStaIn_inputs_dict['global_rng'].standard_normal()
+            new_f                       = samples_f[:, i - 1] + f_sigma * input_dict['global_rng'].standard_normal()
             new_f                       = (np.fabs(new_f) / np.sum(np.fabs(new_f)))
             samples_f[:, i]             = new_f
 
         S                               = samples_sequence[:, :, i]
         f                               = samples_f[:, i]
-        likelihood_sample, _, _, _, _   = _calculate_likelihood(SuStaIn_inputs_dict,sustainData, S, f)
+        likelihood_sample, _, _, _, _   = _calculate_likelihood(input_dict, S, f)
         samples_likelihood[i]           = likelihood_sample
 
         if i > 0:
             ratio                           = np.exp(samples_likelihood[i] - samples_likelihood[i - 1])
-            if ratio < SuStaIn_inputs_dict['global_rng'].random():
+            if ratio < input_dict['global_rng'].random():
                 samples_likelihood[i]       = samples_likelihood[i - 1]
                 samples_sequence[:, :, i]   = samples_sequence[:, :, i - 1]
                 samples_f[:, i]             = samples_f[:, i - 1]
@@ -518,14 +518,14 @@ def _perform_mcmc(SuStaIn_inputs_dict, sustainData, seq_init, f_init, n_iteratio
 
     return ml_sequence, ml_f, ml_likelihood, samples_sequence, samples_f, samples_likelihood
 
-def _plot_sustain_model(SuStaIn_inputs_dict, *args, **kwargs):
-    return ZscoreSustain.plot_positional_var(*args, Z_vals=SuStaIn_inputs_dict['Z_vals'], **kwargs)
+def _plot_sustain_model(input_dict, *args, **kwargs):
+    return ZscoreSustain.plot_positional_var(*args, Z_vals=input_dict['Z_vals'], **kwargs)
 
-def subtype_and_stage_individuals(SuStaIn_inputs_dict, sustainData, samples_sequence, samples_f, N_samples):
+def subtype_and_stage_individuals(input_dict,  samples_sequence, samples_f, N_samples):
     # Subtype and stage a set of subjects. Useful for subtyping/staging subjects that were not used to build the model
 
-    nSamples                            = sustainData.getNumSamples()  #data_local.shape[0]
-    nStages                             = sustainData.getNumStages()    #self.stage_zscore.shape[1]
+    nSamples                            = input_dict['sustainData'].getNumSamples()  #data_local.shape[0]
+    nStages                             = input_dict['sustainData'].getNumStages()    #self.stage_zscore.shape[1]
 
     n_iterations_MCMC                   = samples_sequence.shape[2]
     select_samples                      = np.round(np.linspace(0, n_iterations_MCMC - 1, N_samples))
@@ -547,7 +547,7 @@ def subtype_and_stage_individuals(SuStaIn_inputs_dict, sustainData, samples_sequ
         _,                  \
         total_prob_stage,   \
         total_prob_subtype, \
-        total_prob_subtype_stage        = _calculate_likelihood(SuStaIn_inputs_dict,sustainData, this_S, this_f)
+        total_prob_subtype_stage        = _calculate_likelihood(input_dict, this_S, this_f)
 
         total_prob_subtype              = total_prob_subtype.reshape(len(total_prob_subtype), N_S)
         total_prob_subtype_norm         = total_prob_subtype        / np.tile(np.sum(total_prob_subtype, 1).reshape(len(total_prob_subtype), 1),        (1, N_S))
@@ -597,9 +597,9 @@ def subtype_and_stage_individuals(SuStaIn_inputs_dict, sustainData, samples_sequ
     # E.g. ml_stage == prob_subtype_stage[np.arange(prob_subtype_stage.shape[0]), :, ml_subtype].argmax(1)
     return ml_subtype, prob_ml_subtype, ml_stage, prob_ml_stage, prob_subtype, prob_stage, prob_subtype_stage
 
-def subtype_and_stage_individuals_newData(SuStaIn_inputs_dict, data_new, samples_sequence, samples_f, N_samples):
+def subtype_and_stage_individuals_newData(input_dict, data_new, samples_sequence, samples_f, N_samples):
 
-    numStages_new                   = SuStaIn_inputs_dict['sustainData'].getNumStages() #data_new.shape[1]
+    numStages_new                   = input_dict['sustainData'].getNumStages() #data_new.shape[1]
     sustainData_newData             = ZScoreSustainData(data_new, numStages_new)
 
     ml_subtype,         \
@@ -673,7 +673,7 @@ def plot_positional_var(samples_sequence, samples_f, n_samples, Z_vals, biomarke
             "Both labels and an order have been given. The labels will be reordered according to the given order!"
         )
     if biomarker_order is not None:
-        # SuStaIn_inputs_dict_plot_biomarker_order is not suited to zscore version
+        # input_dict_plot_biomarker_order is not suited to zscore version
         # Ignore for compatability, for now
         # One option is to reshape, sum position, and lowest->highest determines order
         if len(biomarker_order) > N_bio:
@@ -987,14 +987,14 @@ def generate_data(subtypes, stages, gt_ordering, Z_vals, Z_max):
     return data, data_denoised, stage_value
 
 
-def _perform_em(SuStaIn_inputs_dict, sustainData, current_sequence, current_f, rng):
+def _perform_em(input_dict,  current_sequence, current_f, rng):
 
     # Perform an E-M procedure to estimate parameters of SuStaIn model
     MaxIter                             = 100
 
-    N                                   = sustainData.getNumStages()    #self.stage_zscore.shape[1]
+    N                                   = input_dict['sustainData'].getNumStages()    #self.stage_zscore.shape[1]
     N_S                                 = current_sequence.shape[0]
-    current_likelihood, _, _, _, _      = _calculate_likelihood(SuStaIn_inputs_dict,sustainData, current_sequence, current_f)
+    current_likelihood, _, _, _, _      = _calculate_likelihood(input_dict, current_sequence, current_f)
 
     terminate                           = 0
     iteration                           = 0
@@ -1010,7 +1010,7 @@ def _perform_em(SuStaIn_inputs_dict, sustainData, current_sequence, current_f, r
 
         candidate_sequence,     \
         candidate_f,            \
-        candidate_likelihood            = _optimise_parameters(SuStaIn_inputs_dict,sustainData, current_sequence, current_f, rng)
+        candidate_likelihood            = _optimise_parameters(input_dict, current_sequence, current_f, rng)
         HAS_converged                   = np.fabs((candidate_likelihood - current_likelihood) / max(candidate_likelihood, current_likelihood)) < 1e-6
 
         if HAS_converged:
@@ -1050,7 +1050,7 @@ def calculate_z_max(data):
     return Z_max
 
 
-def _find_ml_mixture_iteration(SuStaIn_inputs_dict, sustainData, seq_init, f_init, seed_seq):
+def _find_ml_mixture_iteration(input_dict,  seq_init, f_init, seed_seq):
     #Convenience sub-function for above
 
     # Get process-appropriate Generator
@@ -1061,13 +1061,13 @@ def _find_ml_mixture_iteration(SuStaIn_inputs_dict, sustainData, seq_init, f_ini
     ml_likelihood,      \
     samples_sequence,   \
     samples_f,          \
-    samples_likelihood = _perform_em(SuStaIn_inputs_dict,sustainData, seq_init, f_init, rng)
+    samples_likelihood = _perform_em(input_dict, seq_init, f_init, rng)
 
     return ml_sequence, ml_f, ml_likelihood, samples_sequence, samples_f, samples_likelihood
 
 
 
-def _find_ml_mixture(SuStaIn_inputs_dict, sustainData, seq_init, f_init):
+def _find_ml_mixture(input_dict,  seq_init, f_init):
     # Fit a mixture of models
     #
     #
@@ -1078,18 +1078,18 @@ def _find_ml_mixture(SuStaIn_inputs_dict, sustainData, seq_init, f_init):
 
     N_S                                 = seq_init.shape[0]
 
-    partial_iter                        = partial(_find_ml_mixture_iteration, SuStaIn_inputs_dict, sustainData, seq_init, f_init)
-    seed_sequences = np.random.SeedSequence(SuStaIn_inputs_dict['global_rng'].integers(1e10))
-    pool_output_list                    = SuStaIn_inputs_dict['pool'].map(partial_iter, seed_sequences.spawn(SuStaIn_inputs_dict['N_startpoints']))
+    partial_iter                        = partial(_find_ml_mixture_iteration, input_dict,  seq_init, f_init)
+    seed_sequences = np.random.SeedSequence(input_dict['global_rng'].integers(1e10))
+    pool_output_list                    = input_dict['pool'].map(partial_iter, seed_sequences.spawn(input_dict['N_startpoints']))
 
     if ~isinstance(pool_output_list, list):
         pool_output_list                = list(pool_output_list)
 
-    ml_sequence_mat                     = np.zeros((N_S, sustainData.getNumStages(), SuStaIn_inputs_dict['N_startpoints']))
-    ml_f_mat                            = np.zeros((N_S, SuStaIn_inputs_dict['N_startpoints']))
-    ml_likelihood_mat                   = np.zeros((SuStaIn_inputs_dict['N_startpoints'], 1))
+    ml_sequence_mat                     = np.zeros((N_S, input_dict['sustainData'].getNumStages(), input_dict['N_startpoints']))
+    ml_f_mat                            = np.zeros((N_S, input_dict['N_startpoints']))
+    ml_likelihood_mat                   = np.zeros((input_dict['N_startpoints'], 1))
 
-    for i in range(SuStaIn_inputs_dict['N_startpoints']):
+    for i in range(input_dict['N_startpoints']):
         ml_sequence_mat[:, :, i]        = pool_output_list[i][0]
         ml_f_mat[:, i]                  = pool_output_list[i][1]
         ml_likelihood_mat[i]            = pool_output_list[i][2]
@@ -1105,14 +1105,14 @@ def _find_ml_mixture(SuStaIn_inputs_dict, sustainData, seq_init, f_init):
 
 
 
-def _find_ml_iteration(SuStaIn_inputs_dict, sustainData, seed_seq):
+def _find_ml_iteration(input_dict,  seed_seq):
     #Convenience sub-function for above
 
     # Get process-appropriate Generator
     rng = np.random.default_rng(seed_seq)
 
     # randomly initialise the sequence of the linear z-score model
-    seq_init                        = _initialise_sequence(SuStaIn_inputs_dict,sustainData, rng)
+    seq_init                        = _initialise_sequence(input_dict, rng)
     f_init                          = [1]
 
     this_ml_sequence,   \
@@ -1120,12 +1120,12 @@ def _find_ml_iteration(SuStaIn_inputs_dict, sustainData, seed_seq):
     this_ml_likelihood, \
     _,                  \
     _,                  \
-    _                   = _perform_em(SuStaIn_inputs_dict,sustainData, seq_init, f_init, rng)
+    _                   = _perform_em(input_dict, seq_init, f_init, rng)
     
 
     return this_ml_sequence, this_ml_f, this_ml_likelihood
 
-def _find_ml(SuStaIn_inputs_dict, sustainData):
+def _find_ml(input_dict):
     # Fit the maximum likelihood model
     #
     # OUTPUTS:
@@ -1133,18 +1133,18 @@ def _find_ml(SuStaIn_inputs_dict, sustainData):
     # ml_f          - the most probable proportion of individuals belonging to each subtype
     # ml_likelihood - the likelihood of the most probable SuStaIn model
 
-    partial_iter                        = partial(_find_ml_iteration, SuStaIn_inputs_dict,sustainData)
-    seed_sequences = np.random.SeedSequence(SuStaIn_inputs_dict['global_rng'].integers(1e10))
-    pool_output_list                    = SuStaIn_inputs_dict['pool'].map(partial_iter, seed_sequences.spawn(SuStaIn_inputs_dict['N_startpoints']))
+    partial_iter                        = partial(_find_ml_iteration, input_dict)
+    seed_sequences = np.random.SeedSequence(input_dict['global_rng'].integers(1e10))
+    pool_output_list                    = input_dict['pool'].map(partial_iter, seed_sequences.spawn(input_dict['N_startpoints']))
 
     if ~isinstance(pool_output_list, list):
         pool_output_list                = list(pool_output_list)
 
-    ml_sequence_mat                     = np.zeros((1, sustainData.getNumStages(), SuStaIn_inputs_dict['N_startpoints'])) #np.zeros((1, self.stage_zscore.shape[1], self.N_startpoints))
-    ml_f_mat                            = np.zeros((1, SuStaIn_inputs_dict['N_startpoints']))
-    ml_likelihood_mat                   = np.zeros(SuStaIn_inputs_dict['N_startpoints'])
+    ml_sequence_mat                     = np.zeros((1, input_dict['sustainData'].getNumStages(), input_dict['N_startpoints'])) #np.zeros((1, self.stage_zscore.shape[1], self.N_startpoints))
+    ml_f_mat                            = np.zeros((1, input_dict['N_startpoints']))
+    ml_likelihood_mat                   = np.zeros(input_dict['N_startpoints'])
 
-    for i in range(SuStaIn_inputs_dict['N_startpoints']):
+    for i in range(input_dict['N_startpoints']):
         ml_sequence_mat[:, :, i]        = pool_output_list[i][0]
         ml_f_mat[:, i]                  = pool_output_list[i][1]
         ml_likelihood_mat[i]            = pool_output_list[i][2]
@@ -1159,7 +1159,7 @@ def _find_ml(SuStaIn_inputs_dict, sustainData):
     return ml_sequence, ml_f, ml_likelihood, ml_sequence_mat, ml_f_mat, ml_likelihood_mat
 
 
-def _find_ml_split_iteration(SuStaIn_inputs_dict, sustainData, seed_seq):
+def _find_ml_split_iteration(input_dict,  seed_seq):
     #Convenience sub-function for above
 
     # Get process-appropriate Generator
@@ -1170,7 +1170,7 @@ def _find_ml_split_iteration(SuStaIn_inputs_dict, sustainData, seed_seq):
     # randomly initialise individuals as belonging to one of the two subtypes (clusters)
     min_N_cluster                       = 0
     while min_N_cluster == 0:
-        vals = rng.random(sustainData.getNumSamples())
+        vals = rng.random(input_dict['sustainData'].getNumSamples())
         cluster_assignment = np.ceil(N_S * vals).astype(int)
         # Count cluster sizes
         # Guarantee 1s and 2s counts with minlength=3
@@ -1180,26 +1180,26 @@ def _find_ml_split_iteration(SuStaIn_inputs_dict, sustainData, seed_seq):
         min_N_cluster = cluster_sizes.min()
 
     # initialise the stages of the two models by fitting a single model to each of the two sets of individuals
-    seq_init                            = np.zeros((N_S, sustainData.getNumStages()))
+    seq_init                            = np.zeros((N_S, input_dict['sustainData'].getNumStages()))
 
     for s in range(N_S):
         index_s                         = cluster_assignment.reshape(cluster_assignment.shape[0], ) == (s + 1)
-        temp_sustainData                = sustainData.reindex(index_s)
+        temp_sustainData                = input_dict['sustainData'].reindex(index_s)
 
-        temp_seq_init                   = _initialise_sequence(SuStaIn_inputs_dict,sustainData, rng)
-        seq_init[s, :], _, _, _, _, _  = _perform_em(SuStaIn_inputs_dict,temp_sustainData, temp_seq_init, [1], rng)
+        temp_seq_init                   = _initialise_sequence(input_dict, rng)
+        seq_init[s, :], _, _, _, _, _  = _perform_em(input_dict,temp_sustainData, temp_seq_init, [1], rng)
 
     f_init                              = np.array([1.] * N_S) / float(N_S)
 
     # optimise the mixture of two models from the initialisation
     this_ml_sequence, \
     this_ml_f, \
-    this_ml_likelihood, _, _, _      = _perform_em(SuStaIn_inputs_dict,sustainData, seq_init, f_init, rng)
+    this_ml_likelihood, _, _, _      = _perform_em(input_dict, seq_init, f_init, rng)
 
     return this_ml_sequence, this_ml_f, this_ml_likelihood
 
 
-def _find_ml_split(SuStaIn_inputs_dict, sustainData):
+def _find_ml_split(input_dict):
     # Fit a mixture of two models
     #
     #
@@ -1210,18 +1210,18 @@ def _find_ml_split(SuStaIn_inputs_dict, sustainData):
 
     N_S                                 = 2
 
-    partial_iter                        = partial(_find_ml_split_iteration, SuStaIn_inputs_dict, sustainData)
-    seed_sequences = np.random.SeedSequence(SuStaIn_inputs_dict['global_rng'].integers(1e10))
-    pool_output_list                    = SuStaIn_inputs_dict['pool'].map(partial_iter, seed_sequences.spawn(SuStaIn_inputs_dict['N_startpoints']))
+    partial_iter                        = partial(_find_ml_split_iteration, input_dict)
+    seed_sequences = np.random.SeedSequence(input_dict['global_rng'].integers(1e10))
+    pool_output_list                    = input_dict['pool'].map(partial_iter, seed_sequences.spawn(input_dict['N_startpoints']))
 
     if ~isinstance(pool_output_list, list):
         pool_output_list                = list(pool_output_list)
 
-    ml_sequence_mat                     = np.zeros((N_S, sustainData.getNumStages(), SuStaIn_inputs_dict['N_startpoints']))
-    ml_f_mat                            = np.zeros((N_S, SuStaIn_inputs_dict['N_startpoints']))
-    ml_likelihood_mat                   = np.zeros((SuStaIn_inputs_dict['N_startpoints'], 1))
+    ml_sequence_mat                     = np.zeros((N_S, input_dict['sustainData'].getNumStages(), input_dict['N_startpoints']))
+    ml_f_mat                            = np.zeros((N_S, input_dict['N_startpoints']))
+    ml_likelihood_mat                   = np.zeros((input_dict['N_startpoints'], 1))
 
-    for i in range(SuStaIn_inputs_dict['N_startpoints']):
+    for i in range(input_dict['N_startpoints']):
         ml_sequence_mat[:, :, i]        = pool_output_list[i][0]
         ml_f_mat[:, i]                  = pool_output_list[i][1]
         ml_likelihood_mat[i]            = pool_output_list[i][2]
@@ -1235,7 +1235,7 @@ def _find_ml_split(SuStaIn_inputs_dict, sustainData):
     return ml_sequence, ml_f, ml_likelihood, ml_sequence_mat, ml_f_mat, ml_likelihood_mat
 
 
-def _estimate_ml_sustain_model_nplus1_clusters(SuStaIn_inputs_dict, sustainData, ml_sequence_prev, ml_f_prev):
+def _estimate_ml_sustain_model_nplus1_clusters(input_dict,  ml_sequence_prev, ml_f_prev):
     # Given the previous SuStaIn model, estimate the next model in the
     # hierarchy (i.e. number of subtypes goes from N to N+1)
     #
@@ -1254,21 +1254,21 @@ def _estimate_ml_sustain_model_nplus1_clusters(SuStaIn_inputs_dict, sustainData,
         ml_likelihood,      \
         ml_sequence_mat,    \
         ml_f_mat,           \
-        ml_likelihood_mat = _find_ml(SuStaIn_inputs_dict,sustainData)
+        ml_likelihood_mat = _find_ml(input_dict)
 
 
     else:
         # If the number of subtypes is greater than 1, go through each subtype
         # in turn and try splitting into two subtypes
-        _, _, _, p_sequence, _          = _calculate_likelihood(SuStaIn_inputs_dict,sustainData, ml_sequence_prev, ml_f_prev)
+        _, _, _, p_sequence, _          = _calculate_likelihood(input_dict, ml_sequence_prev, ml_f_prev)
 
         ml_sequence_prev                = ml_sequence_prev.reshape(ml_sequence_prev.shape[0], ml_sequence_prev.shape[1])
         p_sequence                      = p_sequence.reshape(p_sequence.shape[0], N_S - 1)
         p_sequence_norm                 = p_sequence / np.tile(np.sum(p_sequence, 1).reshape(len(p_sequence), 1), (N_S - 1))
 
         # Assign individuals to a subtype (cluster) based on the previous model
-        ml_cluster_subj                 = np.zeros((sustainData.getNumSamples(), 1))   #np.zeros((len(data_local), 1))
-        for m in range(sustainData.getNumSamples()):                                   #range(len(data_local)):
+        ml_cluster_subj                 = np.zeros((input_dict['sustainData'].getNumSamples(), 1))   #np.zeros((len(data_local), 1))
+        for m in range(input_dict['sustainData'].getNumSamples()):                                   #range(len(data_local)):
             ix                          = np.argmax(p_sequence_norm[m, :]) + 1
 
             #TEMP: MATLAB comparison
@@ -1284,11 +1284,11 @@ def _estimate_ml_sustain_model_nplus1_clusters(SuStaIn_inputs_dict, sustainData,
                 # Take the data from the individuals belonging to a particular
                 # cluster and fit a two subtype model
                 print('Splitting cluster', ix_cluster_split + 1, 'of', N_S - 1)
-                ix_i                    = (ml_cluster_subj == int(ix_cluster_split + 1)).reshape(sustainData.getNumSamples(), )
-                sustainData_i           = sustainData.reindex(ix_i)
+                ix_i                    = (ml_cluster_subj == int(ix_cluster_split + 1)).reshape(input_dict['sustainData'].getNumSamples(), )
+                sustainData_i           = input_dict['sustainData'].reindex(ix_i)
 
                 print(' + Resolving 2 cluster problem')
-                this_ml_sequence_split, _, _, _, _, _ = _find_ml_split(SuStaIn_inputs_dict,sustainData_i)
+                this_ml_sequence_split, _, _, _, _, _ = _find_ml_split(input_dict,sustainData_i)
 
                 # Use the two subtype model combined with the other subtypes to
                 # inititialise the fitting of the next SuStaIn model in the
@@ -1311,7 +1311,7 @@ def _estimate_ml_sustain_model_nplus1_clusters(SuStaIn_inputs_dict, sustainData,
                 this_ml_likelihood,     \
                 this_ml_sequence_mat,   \
                 this_ml_f_mat,          \
-                this_ml_likelihood_mat  = _find_ml_mixture(SuStaIn_inputs_dict,sustainData, this_seq_init, this_f_init)
+                this_ml_likelihood_mat  = _find_ml_mixture(input_dict, this_seq_init, this_f_init)
 
                 # Choose the most probable SuStaIn model from the different
                 # possible SuStaIn models initialised by splitting each subtype
@@ -1332,7 +1332,7 @@ def _estimate_ml_sustain_model_nplus1_clusters(SuStaIn_inputs_dict, sustainData,
     return ml_sequence, ml_f, ml_likelihood, ml_sequence_mat, ml_f_mat, ml_likelihood_mat
 
 
-def _optimise_mcmc_settings(SuStaIn_inputs_dict, sustainData, seq_init, f_init):
+def _optimise_mcmc_settings(input_dict,  seq_init, f_init):
 
     # Optimise the perturbation size for the MCMC algorithm
     n_iterations_MCMC_optimisation      = int(1e4)  # FIXME: set externally
@@ -1346,8 +1346,8 @@ def _optimise_mcmc_settings(SuStaIn_inputs_dict, sustainData, seq_init, f_init):
 
     for i in range(n_passes_optimisation):
 
-        _, _, _, samples_sequence_currentpass, samples_f_currentpass, _ = _perform_mcmc(SuStaIn_inputs_dict,   
-                                                                                                sustainData,
+        _, _, _, samples_sequence_currentpass, samples_f_currentpass, _ = _perform_mcmc(input_dict,   
+                                                                                                
                                                                                                  seq_init,
                                                                                                  f_init,
                                                                                                  n_iterations_MCMC_optimisation,
@@ -1375,7 +1375,7 @@ def _optimise_mcmc_settings(SuStaIn_inputs_dict, sustainData, seq_init, f_init):
 
 
 
-def _estimate_uncertainty_sustain_model(SuStaIn_inputs_dict,sustainData, seq_init, f_init):
+def _estimate_uncertainty_sustain_model(input_dict, seq_init, f_init):
     # Estimate the uncertainty in the subtype progression patterns and
     # proportion of individuals belonging to the SuStaIn model
     #
@@ -1389,7 +1389,7 @@ def _estimate_uncertainty_sustain_model(SuStaIn_inputs_dict,sustainData, seq_ini
     # samples_likeilhood - samples of the likelihood of each SuStaIn model sampled by the MCMC sampling
         
     # Perform a few initial passes where the perturbation sizes of the MCMC uncertainty estimation are tuned
-    seq_sigma_opt, f_sigma_opt          = _optimise_mcmc_settings(SuStaIn_inputs_dict,sustainData, seq_init, f_init)
+    seq_sigma_opt, f_sigma_opt          = _optimise_mcmc_settings(input_dict, seq_init, f_init)
 
     # Run the full MCMC algorithm to estimate the uncertainty
     ml_sequence,        \
@@ -1397,7 +1397,7 @@ def _estimate_uncertainty_sustain_model(SuStaIn_inputs_dict,sustainData, seq_ini
     ml_likelihood,      \
     samples_sequence,   \
     samples_f,          \
-    samples_likelihood                  = _perform_mcmc(SuStaIn_inputs_dict,SuStaIn_inputs_dict['sustainData'], seq_init, f_init, SuStaIn_inputs_dict['N_iterations_MCMC'], seq_sigma_opt, f_sigma_opt)
+    samples_likelihood                  = _perform_mcmc(input_dict, seq_init, f_init, input_dict['N_iterations_MCMC'], seq_sigma_opt, f_sigma_opt)
 
     return ml_sequence, ml_f, ml_likelihood, samples_sequence, samples_f, samples_likelihood
 
@@ -1515,7 +1515,7 @@ for s in range(SuStaIn_inputs_dict['N_S_max']):
         ml_likelihood_EM,   \
         ml_sequence_mat_EM, \
         ml_f_mat_EM,        \
-        ml_likelihood_mat_EM  =  _estimate_ml_sustain_model_nplus1_clusters(SuStaIn_inputs_dict,SuStaIn_inputs_dict['sustainData'], ml_sequence_prev_EM, ml_f_prev_EM) #self.__estimate_ml_sustain_model_nplus1_clusters(self.__data, ml_sequence_prev_EM, ml_f_prev_EM)
+        ml_likelihood_mat_EM  =  _estimate_ml_sustain_model_nplus1_clusters(SuStaIn_inputs_dict, ml_sequence_prev_EM, ml_f_prev_EM) #self.__estimate_ml_sustain_model_nplus1_clusters(self.__data, ml_sequence_prev_EM, ml_f_prev_EM)
         
         #Output the sequences to particular varaibles 
         ml_sequence_prev_EM         = ml_sequence_EM
@@ -1530,7 +1530,7 @@ for s in range(SuStaIn_inputs_dict['N_S_max']):
         ml_likelihood,      \
         samples_sequence,   \
         samples_f,          \
-        samples_likelihood          = _estimate_uncertainty_sustain_model(SuStaIn_inputs_dict,SuStaIn_inputs_dict['sustainData'], seq_init, f_init)           #self.__estimate_uncertainty_sustain_model(self.__data, seq_init, f_init)
+        samples_likelihood          = _estimate_uncertainty_sustain_model(SuStaIn_inputs_dict, seq_init, f_init)           #self.__estimate_uncertainty_sustain_model(self.__data, seq_init, f_init)
 
     # max like subtype and stage / subject
     N_samples                       = 1000
@@ -1540,7 +1540,7 @@ for s in range(SuStaIn_inputs_dict['N_S_max']):
     prob_ml_stage,          \
     prob_subtype,           \
     prob_stage,             \
-    prob_subtype_stage               = subtype_and_stage_individuals(SuStaIn_inputs_dict,SuStaIn_inputs_dict['sustainData'], samples_sequence, samples_f, N_samples)   #self.subtype_and_stage_individuals(self.__data, samples_sequence, samples_f, N_samples)
+    prob_subtype_stage               = subtype_and_stage_individuals(SuStaIn_inputs_dict, samples_sequence, samples_f, N_samples)   #self.subtype_and_stage_individuals(self.__data, samples_sequence, samples_f, N_samples)
     
     
     if not pickle_filepath.exists():
