@@ -488,14 +488,38 @@ class OrdinalSustain(AbstractSustain):
         if subtype_titles is not None:
             assert len(subtype_titles) == N_S
         # Z-score colour definition
-        if cmap == "original":
-            # Hard-coded colours: hooray!
+        if len(num_scores) > 5: 
+            print(" - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ")
+            print("WARNING: the number of ordinal scores exceeds our predefined colours (5)")
+            print("We will append the colours so they repeat, these may be hard to interpret")
+            print("DOUBLE CHECK your interpretations!!!")
+            print(" - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ")
+
             colour_mat = np.array([[1, 0, 0], [1, 0, 1], [0, 0, 1], [0.5, 0, 1], [0, 1, 1], [0, 1, 0.5]])[:N_z]
-            # We only have up to 5 default colours, so double-check
-            if colour_mat.shape[0] > N_z:
-                raise ValueError(f"Colours are only defined for {len(colour_mat)} z-scores!")
-        else:
-            raise NotImplementedError
+            # Repeat the color matrix until the number of rows equals num_scores
+            while colour_mat.shape[0] < len(num_scores):
+                colour_mat = np.vstack((colour_mat, colour_mat))
+            
+            colour_mat[:len(num_scores)]
+
+        else: 
+            colour_mat = np.array([[1, 0, 0], [1, 0, 1], [0, 0, 1], [0.5, 0, 1], [0, 1, 1], [0, 1, 0.5]])[:N_z]
+
+        
+        
+        
+        # if cmap == "original":
+        #     # Hard-coded colours: hooray!
+        #     colour_mat = np.array([[1, 0, 0], [1, 0, 1], [0, 0, 1], [0.5, 0, 1], [0, 1, 1], [0, 1, 0.5]])[:N_z]
+        #     # Dynamic colours NOTE: hard to distinguish...
+        #     #colour_mat = OrdinalSustain.generate_colour_scheme(len(num_scores))
+        #     # We only have up to 5 default colours, so double-check
+        #     print(colour_mat.shape[0])
+        #     print(len(num_scores))
+        #     if colour_mat.shape[0] < len(num_scores):
+        #         raise ValueError(f"Colours are only defined for {len(colour_mat)} Ordinal values!")
+        # else:
+        #     raise NotImplementedError
         '''
         Note for future self/others: The use of any arbitrary colourmap is problematic, as when the same stage can have the same biomarker with different z-scores of different certainties, the colours need to mix in a visually informative way and there can be issues with RGB mixing/interpolation, particulary if there are >2 z-scores for the same biomarker at the same stage. It may be possible, but the end result may no longer be useful to look at.
         '''
@@ -536,7 +560,9 @@ class OrdinalSustain(AbstractSustain):
         # Loop over figures (only makes a diff if separate_subtypes=True)
         for i in range(subtype_loops):
             # Create the figure and axis for this subtype loop
-            fig, axs = plt.subplots(nrows, ncols, figsize=figsize)
+            if figsize is None:
+                figsize = ((len(num_scores) * 1.5) -1, 4)
+            fig, axs = plt.subplots(nrows, ncols, figsize=(figsize))
             figs.append(fig)
             # Loop over each axis
             for j in range(total_axes):
@@ -565,15 +591,18 @@ class OrdinalSustain(AbstractSustain):
                 # Define the confusion matrix to insert the colours
                 # Use 1s to start with all white
                 confus_matrix_c = np.ones((N_bio, N, 3))
-
                 # Loop over each z-score event
                 for j, z in enumerate(num_scores):
                     # Determine which colours to alter
                     # I.e. red (1,0,0) means removing green & blue channels
                     # according to the certainty of red (representing z-score 1)
                     alter_level = colour_mat[j] == 0
+                    if not any(alter_level):
+                        alter_level[:] = True  # Set all elements to True if all are False
+
                     # Extract the uncertainties for this score
                     confus_matrix_score = confus_matrix[(stage_score==z)[0]]
+                    
                     # Subtract the certainty for this colour
                     confus_matrix_c[
                         np.ix_(
@@ -610,12 +639,34 @@ class OrdinalSustain(AbstractSustain):
                     confus_matrix_c[biomarker_order, :, :],
                     interpolation='nearest'
                 )
+                
+                #This was an attempt to differentiate repeat colours by symbols, 
+                # print("colMat:", colour_index)
+                # print(colour_index[0,1,0])
+                # for i in range(N_bio):
+                #     for j in range(N):
+                #         # Get the color index from the confusion matrix
+                #         color_index = np.argmax(confus_matrix_c[i, j, :])
+                #         # Get the corresponding symbol
+                #         symbol = symbol_mat[color_index]
+                #         # Plot the symbol only if it's not an empty string
+                #         if symbol != '':
+                #             ax.text(j, i, symbol, ha='center', va='center', color='black')
+
+                
                 # Add the xticks and labels
                 stage_ticks = np.arange(0, N, stage_interval)
                 ax.set_xticks(stage_ticks)
                 ax.set_xticklabels(stage_ticks+1, fontsize=stage_font_size, rotation=stage_rot)
                 # Add the yticks and labels
                 ax.set_yticks(np.arange(N_bio))
+                
+                #Create a biomarker colour legend
+                col_legend = [f"Value {i}" for i in range(1,len(num_scores)+1)]
+                for i in range(len(num_scores)):
+                     ax.plot([], [], color=colour_mat[i], label=col_legend[i])
+                ax.legend(loc='lower center', bbox_to_anchor=(0.5, 0.1), ncol=len(col_legend), bbox_transform=plt.gcf().transFigure)
+
                 # Add biomarker labels to LHS of every row only
                 if (i % ncols) == 0:
                     ax.set_yticklabels(biomarker_labels, ha='right', fontsize=label_font_size, rotation=label_rot)
@@ -628,7 +679,9 @@ class OrdinalSustain(AbstractSustain):
                 ax.set_xlabel(stage_label, fontsize=stage_font_size+2)
                 ax.set_title(title_i, fontsize=title_font_size)
             # Tighten up the figure
-            fig.tight_layout()
+            #fig.tight_layout()
+            plt.tight_layout(pad=1.0)  # Adjust the pad value as needed
+
             # Save if a path is given
             if save_path is not None:
                 # Modify path for specific subtype if specified
@@ -648,6 +701,7 @@ class OrdinalSustain(AbstractSustain):
                     f"{save_name}.{file_format}",
                     **save_kwargs
                 )
+        
         return figs, axs
 
     # ********************* TEST METHODS
