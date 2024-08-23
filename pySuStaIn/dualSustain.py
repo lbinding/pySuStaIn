@@ -24,7 +24,7 @@ class DualSuStaIn_data_generator():
         Usage
         ---------------------------------------
         
-        data_gen = DualSuStaIn_data_generator(n_subtypes, n_biomarkers, n_samples, zVal, zMax, hidden_preportion).generate_data()
+        data_gen = DualSuStaIn_data_generator(n_subtypes, n_biomarkers, n_samples, zVal, zMax, hidden_preportion)
         
         x_data, x_data_noise, \
         y_data, y_data_noise, \
