@@ -24,7 +24,7 @@ class DualSuStaIn_data_generator():
         Usage
         ---------------------------------------
         
-        data_gen = DualSuStaIn_data_generator(n_subtypes, n_biomarkers, n_samples, zVal, zMax, hidden_preportion)
+        data_gen = DualSuStaIn_data_generator(n_subtypes, n_biomarkers, n_samples, zVal, zMax, hidden_preportion).generate_data()
         
         x_data, x_data_noise, \
         y_data, y_data_noise, \
@@ -49,9 +49,9 @@ class DualSuStaIn_data_generator():
         self.n_samples = n_samples        
         self.hidden_preportion = hidden_preportion
         self.z_vals = np.array([[zVal]] * n_biomarkers) 
-        self.z_vals_hidden = np.array([[zVal/hidden_preportion]] * n_biomarkers) 
+        self.z_vals_hidden = np.array([[(zVal*hidden_preportion)]] * n_biomarkers) 
         self.z_max = np.array([zMax] * n_biomarkers) 
-        self.z_max_hidden = np.array([zMax/hidden_preportion] * n_biomarkers)
+        self.z_max_hidden = np.array([(zMax*hidden_preportion)] * n_biomarkers)
                 
         
 
@@ -153,6 +153,7 @@ class DualSuStaIn_data_generator():
         M                                   = stages.shape[0]
         
         #Add the stage to existing y_data values
+        #
         for m in range(M):
             x_data[m,:] = x_data[m,:] + stage_value[:,int(stages[m]),subtypes[m]]
             y_data[m,:] = y_data[m,:] + (stage_value[:,int(stages[m]),subtypes[m]] * abs(1-self.hidden_preportion))
@@ -175,7 +176,6 @@ class DualSuStaIn_data_generator():
         return x_data_noise, y_data_noise
 
     def generate_data_Zscore_sustain_y_hidden_sequence(self, y_data, subtypes, stages, gt_ordering):
-        
         B                                   = self.z_vals_hidden.shape[0]
         stage_zscore                        = np.array([y for x in self.z_vals.T for y in x])
         stage_zscore                        = stage_zscore.reshape(1,len(stage_zscore))
@@ -256,34 +256,39 @@ class DualSuStaIn_data_generator():
         control_proportion = 0.10 # (Can vary by replacing 0.10 with random.uniform(0.01, 0.3))
         patient_proportion = 0.90 #Varied: 1 - control_proportion
     
-        #Here we make sure that there are at least 5 number of patients at each stage 
-        initial_assignments = []
-        for stage in range(1, N_stages + 1):
-            initial_assignments.extend([stage] * 5)
+        # #Here we make sure that there are at least 5 number of patients at each stage 
+        # initial_assignments = []
+        # for stage in range(1, N_stages + 1):
+        #     initial_assignments.extend([stage] * 5)
         
-        remaining_subjects = int(np.round(M * patient_proportion)) - len(initial_assignments)
+        # remaining_subjects = int(np.round(M * patient_proportion)) - len(initial_assignments)
         
-        if remaining_subjects > 0:
-            additional_assignments = np.random.choice(range(1, N_stages + 1), remaining_subjects)
-            final_assignments = initial_assignments + additional_assignments.tolist()
-        else:
-            final_assignments = initial_assignments[:int(np.round(M * patient_proportion))]  # In case total_subjects < initial_assignments length
+        # if remaining_subjects > 0:
+        #     additional_assignments = np.random.choice(range(1, N_stages + 1), remaining_subjects)
+        #     final_assignments = initial_assignments + additional_assignments.tolist()
+        # else:
+        #     final_assignments = initial_assignments[:int(np.round(M * patient_proportion))]  # In case total_subjects < initial_assignments length
         
-        np.random.shuffle(final_assignments)
+        # np.random.shuffle(final_assignments)
     
-        # Convert to numpy array with shape (total_subjects, 1)
-        ground_truth_stages_other = np.array(final_assignments).reshape((int(np.round(M * patient_proportion)), 1))
+        # # Convert to numpy array with shape (total_subjects, 1)
+        # ground_truth_stages_other = np.array(final_assignments).reshape((int(np.round(M * patient_proportion)), 1))
     
-        #Controls are assigned to stage zero of the disease progression
-        ground_truth_stages_control = np.zeros((int(np.round(M * control_proportion)), 1))
+        # #Controls are assigned to stage zero of the disease progression
+        # ground_truth_stages_control = np.zeros((int(np.round(M * control_proportion)), 1))
         
-        #Combine patients and controls         
-        ground_truth_stages         = np.vstack((ground_truth_stages_control, ground_truth_stages_other)).astype(int)
+        # #Combine patients and controls         
+        # ground_truth_stages         = np.vstack((ground_truth_stages_control, ground_truth_stages_other)).astype(int)
+        
+        gt_stages_control = np.zeros((int(M*control_proportion),1))
+        ground_truth_stages = np.concatenate((gt_stages_control, np.ceil(np.random.rand(M-int(M*control_proportion),1)*N_stages)), axis=0)
+
         
         #Generate X data and y data
         x_data, y_data, stage_value = self.generate_data_Zscore_sustain_x_y(ground_truth_subtypes,
                                                                          ground_truth_stages,
                                                                          ground_truth_sequences)            
+        
         # Hidden Sequence 
         ground_truth_sequences_hidden = self.generate_random_Zscore_sustain_model()
         ground_truth_subtypes_hidden  = np.random.choice(range(N_S_ground_truth), M, replace=True, p=ground_truth_fractions).astype(int)
@@ -300,21 +305,21 @@ class DualSuStaIn_data_generator():
     
         np.random.shuffle(final_assignments)
     
-        ground_truth_stages_other_hidden = np.array(final_assignments).reshape((int(np.round(M * patient_proportion)), 1))
-        ground_truth_stages_control_hidden = np.zeros((int(np.round(M * control_proportion)), 1))
-        ground_truth_stages_hidden         = np.vstack((ground_truth_stages_control_hidden, ground_truth_stages_other_hidden)).astype(int)
+        #ground_truth_stages_other_hidden = np.array(final_assignments).reshape((int(np.round(M * patient_proportion)), 1))
+        #ground_truth_stages_control_hidden = np.zeros((int(np.round(M * control_proportion)), 1))
+        #ground_truth_stages_hidden         = np.vstack((ground_truth_stages_control_hidden, ground_truth_stages_other_hidden)).astype(int)
         
         y_data_hidden, stage_value_hidden = self.generate_data_Zscore_sustain_y_hidden_sequence(y_data, ground_truth_subtypes_hidden,
-                                                                         ground_truth_stages_hidden,
+                                                                         ground_truth_stages,
                                                                          ground_truth_sequences_hidden)         
         #Add noise to both of these 
-        x_data_noise, y_data_noise = self.add_noise(x_data, y_data)
+        x_data_noise, y_data_noise = self.add_noise(x_data, y_data_hidden)
         
         #Combine data for output 
-        ground_truth_stages_combined = np.vstack((ground_truth_stages.squeeze(), ground_truth_stages_hidden.squeeze()))
+        ground_truth_stages_combined = np.vstack((ground_truth_stages.squeeze(), ground_truth_stages.squeeze()))
         ground_truth_subtypes_combined = np.vstack((ground_truth_subtypes, ground_truth_subtypes_hidden))
         zVals_combined =     np.vstack((self.z_vals.squeeze(), self.z_vals_hidden.squeeze()))
         ground_truth_sequences_combined =     np.stack((ground_truth_sequences, ground_truth_sequences_hidden))
-    
-    
-        return x_data, x_data_noise, y_data, y_data_noise, ground_truth_stages_combined, ground_truth_subtypes_combined, zVals_combined, ground_truth_sequences_combined, ground_truth_fractions
+        ground_truth_stageVal_combined =     np.stack((stage_value.squeeze(), stage_value_hidden.squeeze()))
+
+        return x_data, x_data_noise, y_data_hidden, y_data_noise, ground_truth_stages_combined, ground_truth_subtypes_combined, zVals_combined, ground_truth_sequences_combined, ground_truth_fractions, ground_truth_stageVal_combined
