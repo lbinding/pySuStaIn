@@ -153,7 +153,7 @@ class ZscoreSustainMissingData(AbstractSustain):
     def _calculate_likelihood_stage(self, sustainData, S):
         '''
          Computes the likelihood of a single linear z-score model using an
-         approximation method (faster)
+         approximation method (faster) and vectorization/broadcasting.
         Outputs:
         ========
          p_perm_k - the probability of each subjects data at each stage of a particular subtype
@@ -176,70 +176,64 @@ class ZscoreSustainMissingData(AbstractSustain):
             event_value                     = np.concatenate([[self.min_biomarker_zscore[i]], self.stage_zscore[self.stage_biomarker_index == b], [self.max_biomarker_zscore[i]]])
             for j in range(len(event_location) - 1):
 
-                if j == 0:  # FIXME: nasty hack to get Matlab indexing to match up - necessary here because indices are used for linspace limits
-
-                    # original
-                    #temp                   = np.arange(event_location[j],event_location[j+1]+2)
-                    #point_value[i,temp]    = np.linspace(event_value[j],event_value[j+1],event_location[j+1]-event_location[j]+2)
-
-                    # fastest by a bit
+                if j == 0:  
                     temp                    = arange_N[event_location[j]:(event_location[j + 1] + 2)]
                     N_j                     = event_location[j + 1] - event_location[j] + 2
-                    point_value[i, temp]    = ZscoreSustainMissingData.linspace_local2(event_value[j], event_value[j + 1], N_j, arange_N[0:N_j])
+                    point_value[i, temp]    = ZscoreSustain.linspace_local2(event_value[j], event_value[j + 1], N_j, arange_N[0:N_j])
 
                 else:
-                    # original
-                    #temp                   = np.arange(event_location[j] + 1, event_location[j + 1] + 2)
-                    #point_value[i, temp]   = np.linspace(event_value[j],event_value[j+1],event_location[j+1]-event_location[j]+1)
-
-                    # fastest by a bit
                     temp                    = arange_N[(event_location[j] + 1):(event_location[j + 1] + 2)]
                     N_j                     = event_location[j + 1] - event_location[j] + 1
-                    point_value[i, temp]    = ZscoreSustainMissingData.linspace_local2(event_value[j], event_value[j + 1], N_j, arange_N[0:N_j])
+                    point_value[i, temp]    = ZscoreSustain.linspace_local2(event_value[j], event_value[j + 1], N_j, arange_N[0:N_j])
 
+        # stage_value shape
         stage_value                         = 0.5 * point_value[:, :point_value.shape[1] - 1] + 0.5 * point_value[:, 1:]
 
-        M                                   = sustainData.getNumSamples()   #data_local.shape[0]
-        p_perm_k                            = np.zeros((M, N + 1))
+        M                                   = sustainData.getNumSamples()
         
-        # Missing data
-        p_missingdata = np.ones((1,B))/ (self.max_biomarker_zscore-self.min_biomarker_zscore)
+        # p_missingdata
+        p_missingdata = np.ones((1, B)) / (self.max_biomarker_zscore - self.min_biomarker_zscore)
         p_missingdata = np.tile(p_missingdata, (M, 1))
 
-        # optimised likelihood calc - take log and only call np.exp once after loop
-        sigmat                              = np.tile(self.std_biomarker_zscore, (M, 1))
+        # sigmat
+        sigmat = np.tile(self.std_biomarker_zscore, (M, 1))
 
-        factor                              = np.log(1. / np.sqrt(np.pi * 2.0) * sigmat)
-        coeff                               = np.log(1. / float(N + 1))
-
-        # original
-        """
-        for j in range(N+1):
-            x                   = (data-np.tile(stage_value[:,j],(M,1)))/sigmat
-            p_perm_k[:,j]       = coeff+np.sum(factor-.5*x*x,1)
+        # factor: - Gaussian Log Normalization Constant
+        factor = np.log(1. / np.sqrt(np.pi * 2.0) * sigmat)
         
-        # faster - do the tiling once
-        stage_value_tiled                   = np.tile(stage_value, (M, 1))
-        N_biomarkers                        = stage_value.shape[0]
-        for j in range(N + 1):
-            stage_value_tiled_j             = stage_value_tiled[:, j].reshape(M, N_biomarkers)
-            x                               = (sustainData.data - stage_value_tiled_j) / sigmat  #(data_local - stage_value_tiled_j) / sigmat
-            p_perm_k[:, j]                  = coeff + np.sum(factor - .5 * np.square(x), 1)
-        p_perm_k                            = np.exp(p_perm_k)
-        """
-        
-        # Missing data
-        stage_value_tiled                   = np.tile(stage_value, (M, 1))
-        N_biomarkers                        = stage_value.shape[0]
-        for j in range(N + 1):
-            stage_value_tiled_j             = stage_value_tiled[:, j].reshape(M, N_biomarkers)
-            x_hasdata                       = (sustainData.data - stage_value_tiled_j) / sigmat  #(data_local - stage_value_tiled_j) / sigmat
-            
-            p = np.log(p_missingdata);
-            p[~np.isnan(sustainData.data)] = x_hasdata[~np.isnan(sustainData.data)];
+        # coeff: Scalar - Prior on stages
+        coeff = np.log(1. / float(N + 1))
 
-            p_perm_k[:, j]                  = coeff + np.sum(factor - .5 * np.square(p), 1) 
-        p_perm_k                            = np.exp(p_perm_k)
+        # --- Vectorized Calculation using Broadcasting ---
+        
+        # Expand dimensions for broadcasting
+        data_expanded = sustainData.data[:, :, np.newaxis]
+        stage_value_expanded = stage_value[np.newaxis, :, :]
+        sigmat_expanded = sigmat[:, :, np.newaxis]
+        factor_expanded = factor[:, :, np.newaxis]
+
+        # Calculate Gaussian Log-Likelihoods (for present data)
+        #   Result contains NaNs where data is missing
+        z_scores = (data_expanded - stage_value_expanded) / sigmat_expanded
+        log_lik_gaussian = factor_expanded - 0.5 * np.square(z_scores)
+
+        # Calculate Missing Data Log-Likelihoods (Uniform)
+        #   We assume missing probability is constant across stages for a specific biomarker
+        log_lik_missing = np.log(p_missingdata[:, :, np.newaxis])
+
+        # Combine based on missingness mask
+        data_mask = np.isnan(data_expanded)
+        
+        # np.where will broadcast the mask and log_lik_missing against the larger log_lik_gaussian
+        # If data is missing -> Use Uniform Log Likelihood (NEW)
+        # If data is present -> Use Gaussian Log Likelihood
+        log_lik_combined = np.where(data_mask, log_lik_missing, log_lik_gaussian)
+
+        # Sum over Biomarkers (axis 1) to get Likelihood per Subject per Stage
+        total_log_likelihood = coeff + np.sum(log_lik_combined, axis=1)
+
+        # Convert to probability
+        p_perm_k = np.exp(total_log_likelihood)
 
         return p_perm_k
 
